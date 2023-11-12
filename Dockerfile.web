@@ -45,9 +45,19 @@ FROM jlesage/baseimage-gui:debian-11-v4
 # Install runtime dependencies for the application.
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update && apt install -y \
+    bzip2 \
     libwebkit2gtk-4.0-37 \
-    restic \
+    wget \
   && rm -rf /var/lib/apt/lists/*
+
+# Download a recent/specific restic version from github instead of using the outdated version from the package repository.
+ARG RESTIC_VERSION=0.16.2
+ARG RESTIC_ARCH=amd64
+ARG RESTIC_URL=https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${RESTIC_ARCH}.bz2
+RUN wget ${RESTIC_URL} \
+  && bzip2 -d *.bz2 \
+  && mv restic* /usr/bin/restic \
+  && chmod +x /usr/bin/restic
 
 # Define software versions.
 ARG DOCKER_IMAGE_VERSION=
