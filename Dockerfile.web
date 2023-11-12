@@ -1,0 +1,73 @@
+#
+# Dockerfile for converting restic-browser into a hacked web application.
+#
+
+FROM jlesage/baseimage-gui:debian-11-v4 as builder
+
+# Install tauri dependencies.
+# source: https://tauri.app/v1/guides/getting-started/prerequisites/#setting-up-linux
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt update
+RUN apt install -y \
+    build-essential \
+    curl \
+    file \
+    libayatana-appindicator3-dev \
+    libgtk-3-dev \
+    librsvg2-dev \
+    libssl-dev \
+    libwebkit2gtk-4.0-dev \
+    wget
+
+# Install rust via rustup because the one from the package repository is to old.
+RUN curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- -y
+ENV PATH="$PATH:/root/.cargo/bin"
+
+# Install a recent node version from nodesource.
+ENV NODE_MAJOR=20
+RUN apt install -y \
+    ca-certificates \
+    curl \
+    gnupg
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nodesource.gpg
+RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
+RUN apt-get update && apt-get install -y nodejs
+
+# Copy local source into the build container and build the app.
+COPY . /tmp/restic-browser
+WORKDIR /tmp/restic-browser
+RUN npm install
+RUN npm run tauri build
+
+###################################################################################################
+FROM jlesage/baseimage-gui:debian-11-v4
+
+# Install runtime dependencies for the application.
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt update && apt install -y \
+    libwebkit2gtk-4.0-37 \
+    restic \
+  && rm -rf /var/lib/apt/lists/*
+
+# Define software versions.
+ARG DOCKER_IMAGE_VERSION=
+ARG APPLICATION_NAME="Restic Browser"
+ARG APPLICATION_VERSION=
+
+# Set internal environment variables.
+RUN \
+    set-cont-env APP_NAME "$APPLICATION_NAME" && \
+    set-cont-env APP_VERSION "$APPLICATION_VERSION" && \
+    set-cont-env DOCKER_IMAGE_VERSION "$DOCKER_IMAGE_VERSION" && \
+    true
+
+# Container metadata.
+LABEL \
+    org.label-schema.name="$APPLICATION_NAME" \
+    org.label-schema.description="Docker container for $APPLICATION_NAME" \
+    org.label-schema.version="${DOCKER_IMAGE_VERSION:-unknown}" \
+    org.label-schema.vcs-url="https://github.com/emuell/restic-browser" \
+    org.label-schema.schema-version="1.0"
+
+COPY docker_web/rootfs /
+COPY --from=builder /tmp/restic-browser/src-tauri/target/release/restic-browser /usr/bin/
